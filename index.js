@@ -25,12 +25,13 @@ const debug = require('debug')('TuyAPI');
 const Cipher = require('./lib/cipher');
 const Parser = require('./lib/message-parser');
 
-function resolveId(device, options) {
+// Gets all compatible devices on the network if no option is selected
+// With options then it resolvesId and returns the id/ip if one is missing.
+function resolveDevices(device, options) {
   // Create new listener
   const listener = dgram.createSocket('udp4');
   listener.bind(6666);
-
-  debug(`Finding missing IP: ${device.ip} or Device ID: ${device.id}`);
+  const timeoutLength = (options === undefined ? 10000 : options.timeout * 1000);
 
   // Find IP for device
   return timeout(new Promise((resolve, reject) => { // Timeout
@@ -44,13 +45,20 @@ function resolveId(device, options) {
         debug(error);
         return;
       }
-
       debug('UDP data:');
       debug(dataRes.data);
-
       const thisId = dataRes.data.gwId;
       const thisIp = dataRes.data.ip;
-      if ((device.id === thisId || device.ip === thisIp) && dataRes.data) {
+      if (options === undefined) {
+        if (thisId in device) {
+          // Cleanup
+          listener.close();
+          listener.removeAllListeners();
+          resolve(true);
+        } else {
+          device[thisId] = dataRes.data;
+        } 
+      } else if ((device.id === thisId || device.ip === thisIp) && dataRes.data) {
         // Add IP
         device.ip = dataRes.data.ip;
 
@@ -74,15 +82,19 @@ function resolveId(device, options) {
         resolve(true);
       }
     });
-
     listener.on('error', err => reject(err));
-  }), options.timeout * 1000, () => {
+  }), timeoutLength, () => {
     // Have to do this so we exit cleanly
     listener.close();
     listener.removeAllListeners();
     // eslint-disable-next-line max-len
     return Promise.reject(new Error('resolveIds() timed out. Is the device powered on and the ID correct?'));
   });
+}
+// Logic moved to resolveDevices
+function resolveId(device, options) {
+  debug(`Finding missing IP: ${device.ip} or Device ID: ${device.id}`);
+  return resolveDevices(device, options);
 }
 
 let resolveIdQueue = Promise.resolve();
@@ -93,6 +105,17 @@ function serialResolveId(device, options) {
   });
 
   resolveIdQueue = promise;
+  return promise;
+}
+
+let resolveDeviceQue = Promise.resolve();
+
+function serialResolveDevices(devices) {
+  this.devices = {};
+  const promise = resolveDeviceQue.catch(() => {}).then(() => {
+    return resolveDevices(devices);
+  });
+  resolveDeviceQue = promise;
   return promise;
 }
 
@@ -130,8 +153,25 @@ class TuyaDevice extends EventEmitter {
     this.device = options;
 
     // Defaults
+
+
     if (!(checkIfValidString(this.device.id) || checkIfValidString(this.device.ip))) {
-      throw new Error('ID and IP are missing from device.');
+      debug('No IP or ID Set');
+      try {
+        if (this.device.resolve === false) {
+          throw new Error('No ID or IP set. Run with resolve: true to view device ids and ips');
+        } else {
+          this.resolveDevices().then(() => {
+            if (this.device.resolve !== true) {
+              throw new Error('No ID or IP set. Select device from above');
+            }
+          }).catch(err => {
+            console.log(err);
+          });
+        }
+      } catch (error) {
+        console.log(error);
+      }
     }
 
     if (!checkIfValidString(this.device.id)) {
@@ -151,7 +191,7 @@ class TuyaDevice extends EventEmitter {
         version: this.device.version
       });
     } else {
-      debug('Encryption key is missing from device. Only get commands will work');
+      debug('Encryption key is missing. You will not be able to set device state');
     }
 
     if (this.device.port === undefined) {
@@ -205,6 +245,47 @@ class TuyaDevice extends EventEmitter {
 
     return serialResolveId(this.device, options);
   }
+
+  resolveDevices() {
+    debug(`print before ${this.device}`);
+    if (this.devices === undefined) {
+      this.devices = {};
+    }
+    return new Promise((resolve, reject) => {
+      serialResolveDevices(this.devices).then(async () => {
+        debug(`devices ${JSON.stringify(this.devices)}`);
+        const idKeys = Object.keys(this.devices);
+        process.stdout.write('{ "devices": [ ');
+        const getDevData = async (index, ids) => {
+          const newId = ids[index];
+          const newTuya = new TuyaDevice({
+            id: newId,
+            ip: this.devices[newId].ip,
+          });
+          const delayConst = await newTuya.get(JSON.parse('{ "schema": true }')).then(status => {
+            debug(`Run :${newId} Status: ${JSON.stringify(status)}`);
+            process.stdout.write(`\n{ "id": ${newId}, "broadcast": ${JSON.stringify(this.devices[newId])}, "schema": ${JSON.stringify(status)} },`);
+            Promise.resolve();
+            return status;
+          }, reason => {
+            console.log(reason.toString());
+            Promise.reject();
+            reject(reason.toString());
+          });
+          debug(`delay ${delayConst}`);
+          index += 1;
+          if (index < ids.length) {
+            getDevData(index, ids);
+          }
+        };
+        getDevData(0, idKeys);
+      }, reason => {
+        console.log(reason.toString());
+        reject(reason.toString());
+      });
+    });
+  }
+
 
   /**
    * @deprecated since v3.0.0. Will be removed in v4.0.0. Use resolveId() instead.
