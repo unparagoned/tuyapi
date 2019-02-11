@@ -256,6 +256,7 @@ class TuyaDevice extends EventEmitter {
         debug(`devices ${JSON.stringify(this.devices)}`);
         const idKeys = Object.keys(this.devices);
         process.stdout.write('{ "devices": [ ');
+         
         const getDevData = async (index, ids) => {
           const newId = ids[index];
           const newTuya = new TuyaDevice({
@@ -500,12 +501,11 @@ class TuyaDevice extends EventEmitter {
           if (this._sendTimeout) {
             clearTimeout(this._sendTimeout);
           }
-
           if (!this.device.persistentConnection) {
-            this.disconnect();
+            this.disconnect(() => resolve(data, commandByte)); 
           }
-
-          resolve(data, commandByte);
+        
+          // resolve(data, commandByte);
           return true;
         };
 
@@ -575,7 +575,17 @@ class TuyaDevice extends EventEmitter {
    */
   connect() {
     this._persistentConnectionStopped = false;
+    if (typeof this.client === 'undefined') {
+      debug('client undefined');
+    } else {
+      debug(`opening client it's state is ${JSON.stringify(this.client)}`);
+    }
+    
     if (!this.client) {
+      debug('Creating new socket');
+      if (typeof this.client !== 'undefined') {
+        debug(`State is ${JSON.stringify(this.client)}`);
+      }
       this.client = new net.Socket();
 
       // Attempt to connect
@@ -712,7 +722,7 @@ class TuyaDevice extends EventEmitter {
       // Handle errors
       this.client.on('close', () => {
         debug('Socket closed:', this.device.ip);
-
+        
         this._connected = false;
 
         /**
@@ -748,9 +758,12 @@ class TuyaDevice extends EventEmitter {
    * when using a persistent connection.
    * @returns {Promise<Boolean>}
    */
-  disconnect() {
+  disconnect(callback) {
     debug('Disconnect');
-
+    
+    this.client.on('close', () => {
+      callback();
+    });
     this._persistentConnectionStopped = true;
     this._connected = false;
 
