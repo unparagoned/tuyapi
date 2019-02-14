@@ -131,17 +131,23 @@ class TuyaDevice extends EventEmitter {
           const resolveGet = data => {
             // Remove self listener
             this.removeListener('data', resolveGet);
-
+            
+            let dataState = data.dps['1']; 
             if (options.schema === true) {
               // Return whole response
-              resolve(data);
+              dataState = data;
             } else if (options.dps) {
               // Return specific property
-              resolve(data.dps[options.dps]);
-            } else {
-              // Return first property by default
-              resolve(data.dps['1']);
+              dataState = data.dps[options.dps];
             }
+            if(!this.device.persistentConnection) {
+              this.client.on('close', () => {
+                resolve(dataState);
+              });
+              this.disconnect();
+            } else resolve(dataState);
+
+
           };
 
           // Add listener
@@ -244,7 +250,12 @@ class TuyaDevice extends EventEmitter {
             this.removeListener('data', resolveSet);
 
             // Return true
-            resolve(true);
+            if(!this.device.persistentConnection) {
+              this.client.on('close', () => {
+                resolve(true);
+              });
+              this.disconnect();
+            } else resolve(true);
           };
 
           // Add listener to data event
@@ -443,7 +454,7 @@ class TuyaDevice extends EventEmitter {
 
           // Automatically ask for current state so we
           // can emit a `data` event as soon as possible
-          this.get();
+          if(this.device.persistentConnection) this.get();
 
           // Return
           resolve(true);
