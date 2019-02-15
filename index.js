@@ -48,7 +48,7 @@ class TuyaDevice extends EventEmitter {
     // Check arguments
     if (!(this.checkIfValidString(this.device.id) ||
           this.checkIfValidString(this.device.ip))) {
-      throw new TypeError('ID and IP are missing from device.');
+      // throw new TypeError('ID and IP are missing from device.');
     }
 
     if (this.checkIfValidString(this.device.key) && this.device.key.length === 16) {
@@ -575,7 +575,21 @@ class TuyaDevice extends EventEmitter {
 
         const thisId = dataRes.data.gwId;
         const thisIp = dataRes.data.ip;
-        if ((this.device.id === thisId || this.device.ip === thisIp) && dataRes.data) {
+        // Get all devices if no ip or id
+        if ( !(this.checkIfValidString(this.device.id) &&
+        this.checkIfValidString(this.device.ip))) {
+          // Initialise devices if empty
+          this.devices =this.devices ?  this.devices : {};
+          // Looks to see if it is new devices or not
+          if (thisId in this.devices) {
+            // Cleanup
+            listener.close();
+            listener.removeAllListeners();
+            resolve(this.devices);
+          } else {
+            this.devices[thisId] = dataRes.data;
+          } //Match missing Id or IP
+        } else if ((this.device.id === thisId || this.device.ip === thisIp) && dataRes.data) {
           // Add IP
           this.device.ip = dataRes.data.ip;
 
@@ -610,6 +624,43 @@ class TuyaDevice extends EventEmitter {
 
       // eslint-disable-next-line max-len
       throw new Error('find() timed out. Is the device powered on and the ID or IP correct?');
+    });
+  }
+
+  /**
+   * Find details of devices on network.
+   * @returns {Promise<Object>} the resulting state
+   */
+  findDevices() {
+    
+    return new Promise((resolve, reject) => {
+      this.find().then( async () => {    
+        debug(`devices ${JSON.stringify(this.devices)}`);
+    
+        const idKeys = Object.keys(this.devices);
+        console.log('{ "devices": [ ');
+        for(let id of idKeys) {
+          const newTuya = new TuyaDevice({
+            id: id,
+            ip: this.devices[id].ip,
+            key: "1000000000000000",
+            persistentConnection: false,
+          });
+          await newTuya.get(JSON.parse('{ "schema": true }')).then(status => {
+            debug(`Run :${id} Status: ${JSON.stringify(status)}`);
+            console.log(`{ "id": ${id}, "broadcast": ${JSON.stringify(this.devices[id])}, "schema": ${JSON.stringify(status)} },`);
+            for(var attname in status) {
+              this.devices[id][attname] = status[attname];
+            }
+          });
+        }
+        console.log('] } ');
+        debug(`Updated Devices ${JSON.stringify(this.devices)}`);
+        resolve(this.devices);
+      }, reason => {
+        console.log(reason.toString());
+        reject(reason.toString());
+      });
     });
   }
 
