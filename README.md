@@ -13,39 +13,54 @@ A library for communicating with devices that use the [Tuya](http://tuya.com) cl
 
 ## Basic Usage
 
+See the [setup instructions](docs/SETUP.md) for how to find the needed parameters.
+
+These examples should report the current status, set the default property to the opposite of what it currently is, then report the changed status.
+They will need to be adapted if your device does not have a boolean property at index 1 (i.e. it doesn't have an on/off property).
+
 ### Asynchronous (event based, recommended)
 ```javascript
+const TuyAPI = require('tuyapi');
+
 const device = new TuyAPI({
   id: 'xxxxxxxxxxxxxxxxxxxx',
-  key: 'xxxxxxxxxxxxxxxx',
-  ip: 'xxx.xxx.xxx.xxx',
-  persistentConnection: true});
+  key: 'xxxxxxxxxxxxxxxx'});
 
-device.on('connected',() => {
-  console.log('Connected to device.');
+let stateHasChanged = false;
+
+// Find device on network
+device.find().then(() => {
+  // Connect to device
+  device.connect();
 });
 
-device.on('disconnected',() => {
+// Add event listeners
+device.on('connected', () => {
+  console.log('Connected to device!');
+});
+
+device.on('disconnected', () => {
   console.log('Disconnected from device.');
+});
+
+device.on('error', error => {
+  console.log('Error!', error);
 });
 
 device.on('data', data => {
   console.log('Data from device:', data);
 
-  const status = data.dps['1'];
+  console.log(`Boolean status of default property: ${data.dps['1']}.`);
 
-  console.log('Current status:', status);
+  // Set default property to opposite
+  if (!stateHasChanged) {
+    device.set({set: !(data.dps['1'])});
 
-  device.set({set: !status}).then(result => {
-    console.log('Result of setting status:', result);
-  });
+    // Otherwise we'll be stuck in an endless
+    // loop of toggling the state.
+    stateHasChanged = true;
+  }
 });
-
-device.on('error',(err) => {
-  console.log('Error: ' + err);
-});
-
-device.connect();
 
 // Disconnect after 10 seconds
 setTimeout(() => { device.disconnect(); }, 10000);
@@ -57,26 +72,24 @@ const TuyAPI = require('tuyapi');
 
 const device = new TuyAPI({
   id: 'xxxxxxxxxxxxxxxxxxxx',
-  key: 'xxxxxxxxxxxxxxxx',
-  ip: 'xxx.xxx.xxx.xxx'});
+  key: 'xxxxxxxxxxxxxxxx'});
 
-device.get().then(status => {
-  console.log('Status:', status);
+(async () => {
+  await device.find();
 
-  device.set({set: !status}).then(result => {
-    console.log('Result of setting status to ' + !status + ': ' + result);
+  let status = await device.get();
 
-    device.get().then(status => {
-      console.log('New status:', status);
-      return;
-    });
-  });
-});
+  console.log(`Current status: ${status}.`);
+
+  await device.set({set: !status});
+
+  status = await device.get();
+
+  console.log(`New status: ${status}.`);
+
+  device.disconnect();
+})();
 ```
-
-This should report the current status, set the device to the opposite of what it currently is, then report the changed status.  The above examples will work with smart plugs; they may need some tweaking for other types of devices.
-
-See the [setup instructions](docs/SETUP.md) for how to find the needed parameters.
 
 
 ## 📝 Notes
@@ -84,7 +97,7 @@ See the [setup instructions](docs/SETUP.md) for how to find the needed parameter
 - Some devices ship with older firmware that may not work with `tuyapi`.  If you're experiencing issues, please try updating the device's firmware in the official app.
 
 
-## 📓 Docs
+## 📓 Documentation
 
 See the [docs](https://codetheweb.github.io/tuyapi/index.html).
 
@@ -103,6 +116,13 @@ See the [docs](https://codetheweb.github.io/tuyapi/index.html).
 - [NorthernMan54](https://github.com/NorthernMan54)
 - [Apollon77](https://github.com/Apollon77)
 - [dresende](https://github.com/dresende)
+- [kaveet](https://github.com/kaveet)
+- [johnyorke](https://github.com/johnyorke)
+- [jpillora](https://github.com/jpillora)
+- [neojski](https://github.com/neojski)
+- [unparagoned](https://github.com/unparagoned)
+
+(If you're not on the above list, open a PR.)
 
 ## Related
 
@@ -112,6 +132,7 @@ See the [docs](https://codetheweb.github.io/tuyapi/index.html).
 ### Ports
 - [python-tuya](https://github.com/clach04/python-tuya) a Python port by [clach04](https://github.com/clach04)
 - [m4rcus.TuyaCore](https://github.com/Marcus-L/m4rcus.TuyaCore) a .NET port by [Marcus-L](https://github.com/Marcus-L)
+- [TuyaKit](https://github.com/eppz/.NET.Library.TuyaKit) a .NET port by [eppz](https://github.com/eppz)
 
 ### Projects built with TuyAPI
 - [tuya-cli](https://github.com/TuyaAPI/cli): a CLI interface for Tuya devices
