@@ -2,6 +2,22 @@
 /*eslint-disable max-statements */
 /*eslint-disable max-lines-per-function */
 //Import packages
+/* eslint arrow-parens: ["error", "as-needed"] */
+/* eslint autoFixOnSave: 0 */
+/* eslint no-trailing-spaces: 0 */
+/* eslint object-curly-spacing: 0 */
+/* eslint no-param-reassign: 0 */
+/* eslint comma-dangle: 0 */
+/* eslint no-underscore-dangle: 0 */
+/* eslint no-unneeded-ternary: 0 */
+/* eslint consistent-return: 0 */
+/* eslint prefer-template: 0 */
+/* eslint operator-linebreak: 0 */
+/* eslint function-paren-newline: 0 */
+/* eslint prefer-destructuring: 0 */
+/* eslint arrow-body-style: 0 */
+
+// Import packages
 const dgram = require('dgram');
 const net = require('net');
 const {EventEmitter} = require('events');
@@ -483,9 +499,8 @@ class TuyaDevice extends EventEmitter {
    * close the socket or exit gracefully
    * when using a persistent connection.
    */
-  disconnect() {
+  disconnect(callback) {
     debug('Disconnect');
-
     this._connected = false;
 
     //Clear timeouts
