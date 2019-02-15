@@ -1,3 +1,4 @@
+/*eslint-disable linebreak-style */
 /*eslint-disable no-await-in-loop */
 /*eslint-disable max-statements */
 /*eslint-disable max-lines-per-function */
@@ -71,7 +72,7 @@ class TuyaDevice extends EventEmitter {
     }
 
     //Contains array of found devices when calling .find()
-    this.foundDevices = [];
+    this.foundDevices = {};
 
     //Private instance variables
 
@@ -141,12 +142,7 @@ class TuyaDevice extends EventEmitter {
             } else {
               dataState = data.dps['1'];
             }
-            if(!this.device.persistentConnection) {
-              this.client.on('close', () => {
-                resolve(dataState);
-              });
-              this.disconnect();
-            } else resolve(dataState);
+            resolve(dataState);
 
 
           };
@@ -251,12 +247,7 @@ class TuyaDevice extends EventEmitter {
             this.removeListener('data', resolveSet);
 
             //Return true
-            if(!this.device.persistentConnection) {
-              this.client.on('close', () => {
-                resolve(true);
-              });
-              this.disconnect();
-            } else resolve(true);
+            resolve(true);
           };
 
           //Add listener to data event
@@ -368,12 +359,8 @@ class TuyaDevice extends EventEmitter {
             debug('Parsed response data:');
             debug(data);
           } else if (typeof data === 'undefined') {
-            if(!this.device.persistentConnection) {
-              this.client.setTimeout(1000, () => {
-                this.client.destroy();
-                reject(new Error('connection timed out'));
-              });
-            }
+
+
             if (dataRes.commandByte === 0x09) { //PONG received
               debug('Pong', this.device.ip);
               return;
@@ -459,7 +446,8 @@ class TuyaDevice extends EventEmitter {
 
           /*Automatically ask for current state so we
              can emit a `data` event as soon as possible */
-          if(this.device.persistentConnection) this.get();
+
+          //this.get();
 
           //Return
           resolve(true);
@@ -533,9 +521,14 @@ class TuyaDevice extends EventEmitter {
    * @param {Object} [options]
    * @param {Boolean} [options.all]
    * true to return array of all found devices
+   * @param {Number} [options.resolveDuplicates=2]
+   * How many devices to see a second time before
+   * stopping early to find all devices
    * @param {Number} [options.timeout=10]
    * how long, in seconds, to wait for device
    * to be resolved before timeout error is thrown
+   * If all devices are being resolved timeout of 0
+   * will resolve when first devices is seen again
    * @example
    * tuya.find().then(() => console.log('ready!'))
    * @returns {Promise<Boolean|Array>}
@@ -549,6 +542,14 @@ class TuyaDevice extends EventEmitter {
     if (options.timeout === undefined) {
       options.timeout = 10;
     }
+
+    //Default deplicate count
+    if (options.resolveDuplicates === undefined) {
+      options.resolveDuplicates = 2;
+    }
+
+    this.foundDevices.Warning = "Function find() timed out before the scan was complete. Increase timeout";
+
 
     if (this.checkIfValidString(this.device.id) &&
         this.checkIfValidString(this.device.ip)) {
@@ -582,8 +583,17 @@ class TuyaDevice extends EventEmitter {
         const thisID = dataRes.data.gwId;
         const thisIP = dataRes.data.ip;
 
-        this.foundDevices.push({id: thisID,
-ip: thisIP});
+        if (thisID in this.foundDevices && options.all) {
+          options.resolveDuplicates -= 1;
+          Reflect.deleteProperty(this.foundDevices, 'Warning');
+          if (options.resolveDuplicates <= 0) {
+            //Have to do this so we exit cleanly
+            listener.close();
+            listener.removeAllListeners();
+            resolve(this.foundDevices);
+          }
+        } else this.foundDevices[thisID] = dataRes;
+
 
         if (!options.all &&
             (this.device.id === thisID || this.device.ip === thisIP) &&
@@ -620,12 +630,15 @@ ip: thisIP});
       //Have to do this so we exit cleanly
       listener.close();
       listener.removeAllListeners();
-
+      debug(`Options ${options.all} all ${this.foundDevices} and if ${('Warning' in this.foundDevices)}`)
       //Return all devices
       if (options.all) {
-        return this.foundDevices;
-      }
-
+          if ('Warning' in this.foundDevices) {
+            console.log(this.foundDevices.Warning);
+            Reflect.deleteProperty(this.foundDevices, 'Warning');
+          }
+          return this.foundDevices;
+        }
       //Otherwise throw error
       //eslint-disable-next-line max-len
       throw new Error('find() timed out. Is the device powered on and the ID or IP correct?');
